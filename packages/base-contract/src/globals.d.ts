@@ -5,4 +5,4 @@ declare module '*.json' {
     /* tslint:enable */
 }
 
-declare module 'ethereumjs-vm/dist/runCode';
+declare module 'ethereumjs-vm';

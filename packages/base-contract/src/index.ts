@@ -11,7 +11,7 @@ import {
     TxData,
     TxDataPayable,
 } from 'ethereum-types';
-import runCode = require('ethereumjs-vm/dist/runCode');
+import * as VM from 'ethereumjs-vm';
 import * as ethers from 'ethers';
 import * as _ from 'lodash';
 
@@ -147,8 +147,8 @@ export class BaseContract {
     protected async _evmExecAsync(input: Buffer): Promise<Buffer> {
         const contractCode = await this._lookupDeployedBytecodeAsync();
         return new Promise<Buffer>((resolve: any, reject: any) => {
-            runCode(
-                {
+            const vm = new VM();
+            vm.runCode({
                     code: Buffer.from(contractCode.substr(2), 'hex'),
                     data: input,
                     gasLimit: Buffer.from('ffffffff', 'hex'),
@@ -157,8 +157,7 @@ export class BaseContract {
                     // res.return holds the successful result or the revert reason
                     // res.err only returns generic VmError
                     resolve(res.return);
-                },
-            );
+                });
         });
     }
     protected _lookupAbiEncoder(functionSignature: string): AbiEncoder.Method {
