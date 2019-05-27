@@ -11,7 +11,7 @@ import {
     TxData,
     TxDataPayable,
 } from 'ethereum-types';
-import * as VM from 'ethereumjs-vm';
+import runCode = require('ethereumjs-vm/dist/runCode');
 import * as ethers from 'ethers';
 import * as _ from 'lodash';
 
@@ -146,9 +146,8 @@ export class BaseContract {
     }
     protected async _evmExecAsync(input: Buffer): Promise<Buffer> {
         const contractCode = await this._lookupDeployedBytecodeAsync();
-        const vm = new VM();
         return new Promise<Buffer>((resolve: any, reject: any) => {
-            vm.runCode(
+            runCode(
                 {
                     code: Buffer.from(contractCode.substr(2), 'hex'),
                     data: input,
