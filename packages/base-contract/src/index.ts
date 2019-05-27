@@ -155,11 +155,9 @@ export class BaseContract {
                     gasLimit: Buffer.from('ffffffff', 'hex'),
                 },
                 (err: any, res: any) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve(res.return);
-                    }
+                    // res.return holds the successful result or the revert reason
+                    // res.err only returns generic VmError
+                    resolve(res.return);
                 },
             );
         });
