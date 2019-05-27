@@ -99,20 +99,30 @@ contract StaticCallProxy {
                     staticCallDataLen               // copy the entire `staticCallData`
                 )
 
+                // Copy `from`, `to`, and `amount` to end of `staticCallData`
+                calldatacopy(
+                    staticCallDataLen,  // copy to memory after end of `staticCallData`
+                    36,                 // `from` is stored at 36 in calldata
+                    96                  // copy 3 words (32 * 3)
+                )
+    
                 // In order to find the offset to `callTarget`, we must add:
                 // assetDataOffset
                 // + 32 (assetData len)
                 // + 4 (proxyId)
-                let callTarget := calldataload(add(assetDataOffset, 36))
+                let callTarget := and(
+                    calldataload(add(assetDataOffset, 36)),
+                    0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff
+                )
 
                 // Perform `callTarget.staticcall(staticCallData)`
                 let success := staticcall(
-                    gas,                // forward all gas
-                    callTarget,         // call address `callTarget`
-                    0,                  // pointer to start of input
-                    staticCallDataLen,  // length of input
-                    0,                  // start of memory can be safely overwritten
-                    0                   // don't copy output to memory
+                    gas,                         // forward all gas
+                    callTarget,                  // call address `callTarget`
+                    0,                           // pointer to start of input
+                    add(staticCallDataLen, 96),  // length of input
+                    0,                           // start of memory can be safely overwritten
+                    0                            // don't copy output to memory
                 )
 
                 // Copy entire output to start of memory
