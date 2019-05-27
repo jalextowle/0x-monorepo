@@ -12,3 +12,4 @@ export * from '../generated-wrappers/i_authorizable';
 export * from '../generated-wrappers/lib_asset_data';
 export * from '../generated-wrappers/mixin_authorizable';
 export * from '../generated-wrappers/multi_asset_proxy';
+export * from '../generated-wrappers/static_call_proxy';

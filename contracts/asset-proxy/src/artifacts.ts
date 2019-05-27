@@ -14,14 +14,16 @@ import * as IAuthorizable from '../generated-artifacts/IAuthorizable.json';
 import * as LibAssetData from '../generated-artifacts/LibAssetData.json';
 import * as MixinAuthorizable from '../generated-artifacts/MixinAuthorizable.json';
 import * as MultiAssetProxy from '../generated-artifacts/MultiAssetProxy.json';
+import * as StaticCallProxy from '../generated-artifacts/StaticCallProxy.json';
 export const artifacts = {
-    LibAssetData: LibAssetData as ContractArtifact,
     ERC1155Proxy: ERC1155Proxy as ContractArtifact,
     ERC20Proxy: ERC20Proxy as ContractArtifact,
     ERC721Proxy: ERC721Proxy as ContractArtifact,
     MixinAuthorizable: MixinAuthorizable as ContractArtifact,
     MultiAssetProxy: MultiAssetProxy as ContractArtifact,
+    StaticCallProxy: StaticCallProxy as ContractArtifact,
     IAssetData: IAssetData as ContractArtifact,
     IAssetProxy: IAssetProxy as ContractArtifact,
     IAuthorizable: IAuthorizable as ContractArtifact,
+    LibAssetData: LibAssetData as ContractArtifact,
 };
