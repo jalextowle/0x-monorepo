@@ -51,7 +51,7 @@ const REVERT_ERROR_SELECTOR_END = REVERT_ERROR_SELECTOR_OFFSET + REVERT_ERROR_SE
 export class BaseContract {
     protected _abiEncoderByFunctionSignature: AbiEncoderByFunctionSignature;
     protected _web3Wrapper: Web3Wrapper;
-    public bytecode: string;
+    protected _bytecode: string;
     public abi: ContractAbi;
     public address: string;
     public contractName: string;
@@ -145,11 +145,12 @@ export class BaseContract {
         return rawEncoded;
     }
     protected async _evmExecAsync(input: Buffer): Promise<Buffer> {
+        const contractCode = await this._lookupDeployedBytecodeAsync();
         return new Promise<Buffer>((resolve: any, reject: any) => {
             const vm = new VM();
             vm.runCode(
                 {
-                    code: Buffer.from(this.bytecode.substr(2), 'hex'),
+                    code: Buffer.from(contractCode.substr(2), 'hex'),
                     data: input,
                     gasLimit: Buffer.from('ffffffff', 'hex'),
                 },
@@ -182,6 +183,13 @@ export class BaseContract {
         }) as MethodAbi;
         return methodAbi;
     }
+    protected async _lookupDeployedBytecodeAsync(): Promise<string> {
+        const bytecode = this._bytecode;
+        if (bytecode === '') {
+            this._bytecode = await this._web3Wrapper.getContractCodeAsync(this.address);
+        }
+        return this._bytecode;
+    }
     protected _strictEncodeArguments(functionSignature: string, functionArguments: any): string {
         const abiEncoder = this._lookupAbiEncoder(functionSignature);
         const inputAbi = abiEncoder.getDataItem().components;
@@ -194,7 +202,6 @@ export class BaseContract {
     constructor(
         contractName: string,
         abi: ContractAbi,
-        bytecode: string,
         address: string,
         supportedProvider: SupportedProvider,
         txDefaults?: Partial<TxData>,
@@ -207,7 +214,7 @@ export class BaseContract {
             (abiDefinition: AbiDefinition) => abiDefinition.type === AbiType.Function,
         ) as MethodAbi[];
         this._abiEncoderByFunctionSignature = {};
-        this.bytecode = bytecode;
+        this._bytecode = '';
         _.each(methodAbis, methodAbi => {
             const abiEncoder = new AbiEncoder.Method(methodAbi);
             const functionSignature = abiEncoder.getSignature();
