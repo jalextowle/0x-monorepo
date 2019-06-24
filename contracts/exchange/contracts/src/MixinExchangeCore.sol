@@ -537,7 +537,7 @@ contract MixinExchangeCore is
             order.feeRecipientAddress,
             fillResults.takerFeePaid
         );
-    
+
         // Transfer maker fee -> feeRecipient
         _dispatchTransferFrom(
             orderHash,
