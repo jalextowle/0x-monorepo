@@ -51,6 +51,111 @@ contract MixinMatchOrders is
         nonReentrant
         returns (LibFillResults.BatchMatchedFillResults memory batchMatchedFillResults)
     {
+        return _batchMatchOrders(leftOrders, rightOrders, leftSignatures, rightSignatures, false);
+    }
+
+    /// @dev Match complementary orders that have a profitable spread.
+    ///      Each order is maximally filled at their respective price point, and
+    ///      the matcher receives a profit denominated in either the left maker asset,
+    ///      right maker asset, or a combination of both.
+    /// @param leftOrders Set of orders with the same maker / taker asset.
+    /// @param rightOrders Set of orders to match against `leftOrders`
+    /// @param leftSignatures Proof that left orders were created by the left makers.
+    /// @param rightSignatures Proof that right orders were created by the right makers.
+    /// @return batchMatchedFillResults Amounts filled and profit generated.
+    function batchMatchOrdersWithMaximalFill(
+        LibOrder.Order[] memory leftOrders,
+        LibOrder.Order[] memory rightOrders,
+        bytes[] memory leftSignatures,
+        bytes[] memory rightSignatures
+    )
+        public
+        returns (LibFillResults.BatchMatchedFillResults memory batchMatchedFillResults)
+    {
+        return _batchMatchOrders(leftOrders, rightOrders, leftSignatures, rightSignatures, true);
+    }
+
+    /// @dev Match two complementary orders that have a profitable spread.
+    ///      Each order is filled at their respective price point. However, the calculations are
+    ///      carried out as though the orders are both being filled at the right order's price point.
+    ///      The profit made by the left order goes to the taker (who matched the two orders).
+    /// @param leftOrder First order to match.
+    /// @param rightOrder Second order to match.
+    /// @param leftSignature Proof that order was created by the left maker.
+    /// @param rightSignature Proof that order was created by the right maker.
+    /// @return matchedFillResults Amounts filled and fees paid by maker and taker of matched orders.
+    function matchOrders(
+        LibOrder.Order memory leftOrder,
+        LibOrder.Order memory rightOrder,
+        bytes memory leftSignature,
+        bytes memory rightSignature
+    )
+        public
+        nonReentrant
+        returns (LibFillResults.MatchedFillResults memory matchedFillResults)
+    {
+        return _matchOrders(leftOrder, rightOrder, leftSignature, rightSignature);
+    }
+
+    /// @dev Match two complementary orders that have a profitable spread.
+    ///      Each order is maximally filled at their respective price point, and
+    ///      the matcher receives a profit denominated in either the left maker asset,
+    ///      right maker asset, or a combination of both.
+    /// @param leftOrder First order to match.
+    /// @param rightOrder Second order to match.
+    /// @param leftSignature Proof that order was created by the left maker.
+    /// @param rightSignature Proof that order was created by the right maker.
+    /// @return matchedFillResults Amounts filled by maker and taker of matched orders.
+    function matchOrdersWithMaximalFill(
+        LibOrder.Order memory leftOrder,
+        LibOrder.Order memory rightOrder,
+        bytes memory leftSignature,
+        bytes memory rightSignature
+    )
+        public
+        nonReentrant
+        returns (LibFillResults.MatchedFillResults memory matchedFillResults)
+    {
+        return _matchOrdersWithMaximalFill(leftOrder, rightOrder, leftSignature, rightSignature);
+    }
+
+    /// @dev Validates context for matchOrders. Succeeds or throws.
+    /// @param leftOrder First order to match.
+    /// @param rightOrder Second order to match.
+    function _assertValidMatch(
+        LibOrder.Order memory leftOrder,
+        LibOrder.Order memory rightOrder
+    )
+        internal
+        view
+    {
+        // Make sure there is a profitable spread.
+        // There is a profitable spread iff the cost per unit bought (OrderA.MakerAmount/OrderA.TakerAmount) for each order is greater
+        // than the profit per unit sold of the matched order (OrderB.TakerAmount/OrderB.MakerAmount).
+        // This is satisfied by the equations below:
+        // <leftOrder.makerAssetAmount> / <leftOrder.takerAssetAmount> >= <rightOrder.takerAssetAmount> / <rightOrder.makerAssetAmount>
+        // AND
+        // <rightOrder.makerAssetAmount> / <rightOrder.takerAssetAmount> >= <leftOrder.takerAssetAmount> / <leftOrder.makerAssetAmount>
+        // These equations can be combined to get the following:
+        if (_safeMul(leftOrder.makerAssetAmount, rightOrder.makerAssetAmount) <
+            _safeMul(leftOrder.takerAssetAmount, rightOrder.takerAssetAmount)) {
+            _rrevert(NegativeSpreadError(
+                getOrderHash(leftOrder),
+                getOrderHash(rightOrder)
+            ));
+        }
+    }
+
+    function _batchMatchOrders(
+        LibOrder.Order[] memory leftOrders,
+        LibOrder.Order[] memory rightOrders,
+        bytes[] memory leftSignatures,
+        bytes[] memory rightSignatures,
+        bool isWithMaximalFill
+    )
+        internal
+        returns (LibFillResults.BatchMatchedFillResults memory batchMatchedFillResults)
+    {
         // Ensure that the left and right arrays are compatible and have nonzero lengths
         require(leftOrders.length > 0, "Invalid number of left orders");
         require(rightOrders.length > 0, "Invalid number of right orders");
@@ -74,16 +179,27 @@ contract MixinMatchOrders is
         bytes memory leftSignature = leftSignatures[0];
         bytes memory rightSignature = rightSignatures[0];
 
-        // Loop infinitely (until broken inside of the loop), but keep a counter of how
-        // many orders have been matched.
+
         for (i = 0;; i++) {
-            // Match the two orders that are pointed to by the left and right indices
-            LibFillResults.MatchedFillResults memory matchResults = _matchOrders(
-                leftOrder,
-                rightOrder,
-                leftSignature,
-                rightSignature
-            );
+            LibFillResults.MatchedFillResults memory matchResults;
+            // Match the two orders that are pointed to by the left and right indices. If specified, use the
+            // matchOrdersWithMaximalFill function.
+            if (isWithMaximalFill) {
+                // Match the two orders that are pointed to by the left and right indices
+                matchResults = matchOrdersWithMaximalFill(
+                    leftOrder,
+                    rightOrder,
+                    leftSignature,
+                    rightSignature
+                );
+            } else {
+                matchResults = matchOrders(
+                    leftOrder,
+                    rightOrder,
+                    leftSignature,
+                    rightSignature
+                );
+            }
 
             // Add the matchResults and the profit made during the match to the
             // batchMatchedFillResults for this batch.
@@ -126,55 +242,6 @@ contract MixinMatchOrders is
 
         // Return the fill results from the batch match
         return batchMatchedFillResults;
-    }
-
-    /// @dev Match two complementary orders that have a profitable spread.
-    ///      Each order is filled at their respective price point. However, the calculations are
-    ///      carried out as though the orders are both being filled at the right order's price point.
-    ///      The profit made by the left order goes to the taker (who matched the two orders).
-    /// @param leftOrder First order to match.
-    /// @param rightOrder Second order to match.
-    /// @param leftSignature Proof that order was created by the left maker.
-    /// @param rightSignature Proof that order was created by the right maker.
-    /// @return matchedFillResults Amounts filled and fees paid by maker and taker of matched orders.
-    function matchOrders(
-        LibOrder.Order memory leftOrder,
-        LibOrder.Order memory rightOrder,
-        bytes memory leftSignature,
-        bytes memory rightSignature
-    )
-        public
-        nonReentrant
-        returns (LibFillResults.MatchedFillResults memory matchedFillResults)
-    {
-        return _matchOrders(leftOrder, rightOrder, leftSignature, rightSignature);
-    }
-
-    /// @dev Validates context for matchOrders. Succeeds or throws.
-    /// @param leftOrder First order to match.
-    /// @param rightOrder Second order to match.
-    function _assertValidMatch(
-        LibOrder.Order memory leftOrder,
-        LibOrder.Order memory rightOrder
-    )
-        internal
-        view
-    {
-        // Make sure there is a profitable spread.
-        // There is a profitable spread iff the cost per unit bought (OrderA.MakerAmount/OrderA.TakerAmount) for each order is greater
-        // than the profit per unit sold of the matched order (OrderB.TakerAmount/OrderB.MakerAmount).
-        // This is satisfied by the equations below:
-        // <leftOrder.makerAssetAmount> / <leftOrder.takerAssetAmount> >= <rightOrder.takerAssetAmount> / <rightOrder.makerAssetAmount>
-        // AND
-        // <rightOrder.makerAssetAmount> / <rightOrder.takerAssetAmount> >= <leftOrder.takerAssetAmount> / <leftOrder.makerAssetAmount>
-        // These equations can be combined to get the following:
-        if (_safeMul(leftOrder.makerAssetAmount, rightOrder.makerAssetAmount) <
-            _safeMul(leftOrder.takerAssetAmount, rightOrder.takerAssetAmount)) {
-            _rrevert(NegativeSpreadError(
-                getOrderHash(leftOrder),
-                getOrderHash(rightOrder)
-            ));
-        }
     }
 
     /// @dev Calculates fill amounts for the matched orders.
