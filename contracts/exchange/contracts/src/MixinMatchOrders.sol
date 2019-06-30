@@ -94,7 +94,7 @@ contract MixinMatchOrders is
         nonReentrant
         returns (LibFillResults.MatchedFillResults memory matchedFillResults)
     {
-        return _matchOrders(leftOrder, rightOrder, leftSignature, rightSignature);
+        return _matchOrders(leftOrder, rightOrder, leftSignature, rightSignature, false);
     }
 
     /// @dev Match two complementary orders that have a profitable spread.
@@ -116,7 +116,7 @@ contract MixinMatchOrders is
         nonReentrant
         returns (LibFillResults.MatchedFillResults memory matchedFillResults)
     {
-        return _matchOrdersWithMaximalFill(leftOrder, rightOrder, leftSignature, rightSignature);
+        return _matchOrders(leftOrder, rightOrder, leftSignature, rightSignature, true);
     }
 
     /// @dev Validates context for matchOrders. Succeeds or throws.
@@ -213,7 +213,7 @@ contract MixinMatchOrders is
 
             // If the leftOrder is filled, update the leftIdx, leftOrder, and leftSignature,
             // or break out of the loop if there are no more leftOrders to match.
-            if (_isFilled(leftOrder, matchResults.left)) {
+            if (_isFilled(leftOrder)) {
                 if (++leftIdx == leftOrders.length) {
                     break;
                 } else {
@@ -224,7 +224,7 @@ contract MixinMatchOrders is
 
             // If the rightOrder is filled, update the rightIdx, rightOrder, and rightSignature,
             // or break out of the loop if there are no more rightOrders to match.
-            if (_isFilled(rightOrder, matchResults.right)) {
+            if (_isFilled(rightOrder)) {
                 if (++rightIdx == rightOrders.length) {
                     break;
                 } else {
@@ -253,11 +253,14 @@ contract MixinMatchOrders is
     /// @param leftOrderTakerAssetFilledAmount Amount of left order already filled.
     /// @param rightOrderTakerAssetFilledAmount Amount of right order already filled.
     /// @param matchedFillResults Amounts to fill and fees to pay by maker and taker of matched orders.
+    /// @param maximalFill A boolean indicating whether or not this calculation should use the maximal
+    ///                    fill strategy for order matching.
     function _calculateMatchedFillResults(
         LibOrder.Order memory leftOrder,
         LibOrder.Order memory rightOrder,
         uint256 leftOrderTakerAssetFilledAmount,
-        uint256 rightOrderTakerAssetFilledAmount
+        uint256 rightOrderTakerAssetFilledAmount,
+        bool maximalFill
     )
         internal
         pure
@@ -277,46 +280,102 @@ contract MixinMatchOrders is
             rightTakerAssetAmountRemaining
         );
 
-        // Calculate fill results for maker and taker assets: at least one order will be fully filled.
-        // The maximum amount the left maker can buy is `leftTakerAssetAmountRemaining`
-        // The maximum amount the right maker can sell is `rightMakerAssetAmountRemaining`
-        // We have two distinct cases for calculating the fill results:
-        // Case 1.
-        //   If the left maker can buy more than the right maker can sell, then only the right order is fully filled.
-        //   If the left maker can buy exactly what the right maker can sell, then both orders are fully filled.
-        // Case 2.
-        //   If the left maker cannot buy more than the right maker can sell, then only the left order is fully filled.
-        if (leftTakerAssetAmountRemaining >= rightMakerAssetAmountRemaining) {
-            // Case 1: Right order is fully filled
-            matchedFillResults.right.makerAssetFilledAmount = rightMakerAssetAmountRemaining;
-            matchedFillResults.right.takerAssetFilledAmount = rightTakerAssetAmountRemaining;
-            matchedFillResults.left.takerAssetFilledAmount = matchedFillResults.right.makerAssetFilledAmount;
-            // Round down to ensure the maker's exchange rate does not exceed the price specified by the order.
-            // We favor the maker when the exchange rate must be rounded.
-            matchedFillResults.left.makerAssetFilledAmount = _safeGetPartialAmountFloor(
-                leftOrder.makerAssetAmount,
-                leftOrder.takerAssetAmount,
-                matchedFillResults.left.takerAssetFilledAmount
-            );
+        if (maximalFill) {
+            bool leftSpread;
+            bool rightSpread;
+            // FIXME -- Add good comments
+            if (leftTakerAssetAmountRemaining > rightMakerAssetAmountRemaining) {
+                // Case 1: Right order is fully filled with the profit paid in the left makerAsset
+                matchedFillResults.right.makerAssetFilledAmount = rightMakerAssetAmountRemaining;
+                matchedFillResults.right.takerAssetFilledAmount = rightTakerAssetAmountRemaining;
+                matchedFillResults.left.takerAssetFilledAmount = rightMakerAssetAmountRemaining;
+                matchedFillResults.left.makerAssetFilledAmount = _safeGetPartialAmountFloor(
+                    leftMakerAssetAmountRemaining,
+                    leftTakerAssetAmountRemaining,
+                    rightMakerAssetAmountRemaining
+                );
+                // FIXME(Add comment?)
+                leftSpread = true;
+            } else if (rightTakerAssetAmountRemaining > leftMakerAssetAmountRemaining) {
+                // Case 2: Left order is fully filled with the profit paid in the right makerAsset
+                matchedFillResults.right.makerAssetFilledAmount = _safeGetPartialAmountFloor(
+                    rightMakerAssetAmountRemaining,
+                    rightTakerAssetAmountRemaining,
+                    leftMakerAssetAmountRemaining
+                );
+                matchedFillResults.right.takerAssetFilledAmount = leftMakerAssetAmountRemaining;
+                matchedFillResults.left.makerAssetFilledAmount = leftMakerAssetAmountRemaining;
+                matchedFillResults.left.makerAssetFilledAmount = leftTakerAssetAmountRemaining;
+                // FIXME(Add comment?)
+                rightSpread = true;
+            } else {
+                // Case 3: The right and left orders are fully filled
+                matchedFillResults.left.makerAssetFilledAmount = leftMakerAssetAmountRemaining;
+                matchedFillResults.left.takerAssetFilledAmount = leftTakerAssetAmountRemaining;
+                matchedFillResults.right.makerAssetFilledAmount = rightMakerAssetAmountRemaining;
+                matchedFillResults.right.takerAssetFilledAmount = rightTakerAssetAmountRemaining;
+                // FIXME(Add comment?)
+                leftSpread = true;
+                rightSpread = true;
+            }
+
+            // Calculate amount given to taker in the left order's maker asset
+            if (leftSpread) {
+                matchedFillResults.leftMakerAssetSpreadAmount = _safeSub(
+                    matchedFillResults.left.makerAssetFilledAmount,
+                    matchedFillResults.right.takerAssetFilledAmount
+                );
+            }
+
+            // Calculate amount given to taker in the right order's maker asset
+            if (rightSpread) {
+                matchedFillResults.rightMakerAssetSpreadAmount = _safeSub(
+                    matchedFillResults.right.makerAssetFilledAmount,
+                    matchedFillResults.left.takerAssetFilledAmount
+                );
+            }
         } else {
-            // Case 2: Left order is fully filled
-            matchedFillResults.left.makerAssetFilledAmount = leftMakerAssetAmountRemaining;
-            matchedFillResults.left.takerAssetFilledAmount = leftTakerAssetAmountRemaining;
-            matchedFillResults.right.makerAssetFilledAmount = matchedFillResults.left.takerAssetFilledAmount;
-            // Round up to ensure the maker's exchange rate does not exceed the price specified by the order.
-            // We favor the maker when the exchange rate must be rounded.
-            matchedFillResults.right.takerAssetFilledAmount = _safeGetPartialAmountCeil(
-                rightOrder.takerAssetAmount,
-                rightOrder.makerAssetAmount,
-                matchedFillResults.right.makerAssetFilledAmount
+            // Calculate fill results for maker and taker assets: at least one order will be fully filled.
+            // The maximum amount the left maker can buy is `leftTakerAssetAmountRemaining`
+            // The maximum amount the right maker can sell is `rightMakerAssetAmountRemaining`
+            // We have two distinct cases for calculating the fill results:
+            // Case 1.
+            //   If the left maker can buy more than the right maker can sell, then only the right order is fully filled.
+            //   If the left maker can buy exactly what the right maker can sell, then both orders are fully filled.
+            // Case 2.
+            //   If the left maker cannot buy more than the right maker can sell, then only the left order is fully filled.
+            if (leftTakerAssetAmountRemaining >= rightMakerAssetAmountRemaining) {
+                // Case 1: Right order is fully filled
+                matchedFillResults.right.makerAssetFilledAmount = rightMakerAssetAmountRemaining;
+                matchedFillResults.right.takerAssetFilledAmount = rightTakerAssetAmountRemaining;
+                matchedFillResults.left.takerAssetFilledAmount = matchedFillResults.right.makerAssetFilledAmount;
+                // Round down to ensure the maker's exchange rate does not exceed the price specified by the order.
+                // We favor the maker when the exchange rate must be rounded.
+                matchedFillResults.left.makerAssetFilledAmount = _safeGetPartialAmountFloor(
+                    leftOrder.makerAssetAmount,
+                    leftOrder.takerAssetAmount,
+                    matchedFillResults.left.takerAssetFilledAmount
+                );
+            } else {
+                // Case 2: Left order is fully filled
+                matchedFillResults.left.makerAssetFilledAmount = leftMakerAssetAmountRemaining;
+                matchedFillResults.left.takerAssetFilledAmount = leftTakerAssetAmountRemaining;
+                matchedFillResults.right.makerAssetFilledAmount = matchedFillResults.left.takerAssetFilledAmount;
+                // Round up to ensure the maker's exchange rate does not exceed the price specified by the order.
+                // We favor the maker when the exchange rate must be rounded.
+                matchedFillResults.right.takerAssetFilledAmount = _safeGetPartialAmountCeil(
+                    rightOrder.takerAssetAmount,
+                    rightOrder.makerAssetAmount,
+                    matchedFillResults.right.makerAssetFilledAmount
+                );
+            }
+
+            // Calculate amount given to taker
+            matchedFillResults.leftMakerAssetSpreadAmount = _safeSub(
+                matchedFillResults.left.makerAssetFilledAmount,
+                matchedFillResults.right.takerAssetFilledAmount
             );
         }
-
-        // Calculate amount given to taker
-        matchedFillResults.leftMakerAssetSpreadAmount = _safeSub(
-            matchedFillResults.left.makerAssetFilledAmount,
-            matchedFillResults.right.takerAssetFilledAmount
-        );
 
         // Compute fees for left order
         matchedFillResults.left.makerFeePaid = _safeGetPartialAmountFloor(
@@ -346,20 +405,17 @@ contract MixinMatchOrders is
         return matchedFillResults;
     }
 
+    /// FIXME -- This is probably not efficient
     /// @dev Determines whether or not an order has been fully filled and returns the result.
     /// @param order The order that should be checked.
-    /// @param fillResults The results of the most recent fill -- used to determine whether
-    ///                    or not the order was fully filled.
     /// @return A boolean reflecting whether or not the order was fully filled
-    function _isFilled(
-        LibOrder.Order memory order,
-        LibFillResults.FillResults memory fillResults
-    )
+    function _isFilled(LibOrder.Order memory order)
         internal
-        pure
+        view
         returns (bool)
     {
-        if (fillResults.takerAssetFilledAmount >= order.takerAssetAmount) {
+        LibOrder.OrderInfo memory orderInfo = getOrderInfo(order);
+        if (OrderStatus(orderInfo.orderStatus) == OrderStatus.FULLY_FILLED) {
             return true;
         }
         return false;
@@ -374,12 +430,14 @@ contract MixinMatchOrders is
     /// @param rightOrder Second order to match.
     /// @param leftSignature Proof that order was created by the left maker.
     /// @param rightSignature Proof that order was created by the right maker.
+    /// @param withMaximalFill TODO
     /// @return matchedFillResults Amounts filled and fees paid by maker and taker of matched orders.
     function _matchOrders(
         LibOrder.Order memory leftOrder,
         LibOrder.Order memory rightOrder,
         bytes memory leftSignature,
-        bytes memory rightSignature
+        bytes memory rightSignature,
+        bool withMaximalFill
     )
         private
         returns (LibFillResults.MatchedFillResults memory matchedFillResults)
@@ -417,7 +475,8 @@ contract MixinMatchOrders is
             leftOrder,
             rightOrder,
             leftOrderInfo.orderTakerAssetFilledAmount,
-            rightOrderInfo.orderTakerAssetFilledAmount
+            rightOrderInfo.orderTakerAssetFilledAmount,
+            withMaximalFill
         );
 
         // Validate fill contexts
