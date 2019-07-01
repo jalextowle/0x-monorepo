@@ -185,7 +185,7 @@ contract MixinAssetProxyDispatcher is
                     // at `cdStart`.
                     // The first 32 bytes are the length of the data.
                     mstore(cdStart, revertDataSize)
-                    // Copy the revert data immediately after the length. 
+                    // Copy the revert data immediately after the length.
                     returndatacopy(add(cdStart, 32), 0, revertDataSize)
                     // We need to move the free memory pointer because we
                     // still have solidity logic that executes after this assembly.

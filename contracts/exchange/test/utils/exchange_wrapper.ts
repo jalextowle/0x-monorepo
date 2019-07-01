@@ -298,6 +298,22 @@ export class ExchangeWrapper {
         const tx = await this._logDecoder.getTxWithDecodedLogsAsync(txHash);
         return tx;
     }
+    public async matchOrdersWithMaximalFillAsync(
+        signedOrderLeft: SignedOrder,
+        signedOrderRight: SignedOrder,
+        from: string,
+    ): Promise<TransactionReceiptWithDecodedLogs> {
+        const params = orderUtils.createMatchOrders(signedOrderLeft, signedOrderRight);
+        const txHash = await this._exchange.matchOrdersWithMaximalFill.sendTransactionAsync(
+            params.left,
+            params.right,
+            params.leftSignature,
+            params.rightSignature,
+            { from },
+        );
+        const tx = await this._logDecoder.getTxWithDecodedLogsAsync(txHash);
+        return tx;
+    }
     public async getFillOrderResultsAsync(
         signedOrder: SignedOrder,
         from: string,
