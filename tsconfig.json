@@ -37,6 +37,7 @@
         { "path": "./packages/assert" },
         { "path": "./packages/asset-buyer" },
         { "path": "./packages/base-contract" },
+        { "path": "./packages/bundle" },
         { "path": "./packages/connect" },
         { "path": "./packages/contract-addresses" },
         { "path": "./packages/contract-artifacts" },
