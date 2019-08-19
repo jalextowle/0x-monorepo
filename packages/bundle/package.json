@@ -1,0 +1,22 @@
+{
+    "name": "bundle",
+    "version": "1.0.0",
+    "main": "index.js",
+    "license": "MIT",
+    "scripts": {
+        "lint": "tslint --format stylish --project .",
+        "fix": "tslint --fix --format stylish --project .",
+        "clean": "shx rm -rf lib",
+        "build": "tsc -b",
+        "build:ci": "yarn build"
+    },
+    "bin": {
+        "bundle": "bin/cli.js"
+    },
+    "dependencies": {
+        "@0x/abi-gen": "^2.1.1",
+        "@0x/contracts-gen": "^1.0.10",
+        "@0x/sol-compiler": "^3.1.12",
+        "mocha": "^6.2.0"
+    }
+}
