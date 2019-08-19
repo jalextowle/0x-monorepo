@@ -1,8 +1,8 @@
 {
-    "name": "bundle",
+    "name": "@0x/bundle",
     "version": "0.0.1",
     "main": "index.js",
-    "license": "MIT",
+    "license": "Apache 2.0",
     "scripts": {
         "lint": "tslint --format stylish --project .",
         "fix": "tslint --fix --format stylish --project .",
@@ -11,7 +11,7 @@
         "build:ci": "yarn build"
     },
     "bin": {
-        "bundle": "bin/cli.js"
+        "bundle": "bin/bundle.js"
     },
     "dependencies": {
         "@0x/abi-gen": "^2.1.1",
